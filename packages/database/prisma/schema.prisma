@@ -1,0 +1,187 @@
+// Prisma schema for Cloud Capital database
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  SUBADMIN
+  SUPERADMIN
+}
+
+enum TaskStatus {
+  PENDING
+  PRE_APPROVED
+  COMPLETED
+  REJECTED
+}
+
+enum TaskType {
+  DEPOSIT_MANUAL
+  DEPOSIT_AUTO
+  WITHDRAWAL
+  LIQUIDATION
+}
+
+enum InvestmentClass {
+  BRONCE
+  PLATA
+  BASIC
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+model User {
+  id                 String           @id @default(uuid())
+  email              String           @unique
+  password           String
+  name               String
+  username           String           @unique
+  role               UserRole         @default(USER)
+  
+  capitalUSDT        Float?
+  currentBalanceUSDT Float?
+  
+  investmentClass    InvestmentClass?
+  
+  referralCode       String?          @unique
+  referrerId         String?
+  referrer           User?            @relation("UserReferrals", fields: [referrerId], references: [id])
+  referrals          User[]           @relation("UserReferrals")
+  
+  hasFirstDeposit    Boolean          @default(false)
+  
+  // BTC Wallet Addresses
+  btcDepositAddress  String?          @unique  // Dirección BTC para depósitos
+  btcWithdrawAddress String?                   // Dirección BTC personal del usuario
+  whatsappNumber     String?                   // Número de WhatsApp (para colaboradores)
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  
+  transactions       Transaction[]
+  tasks              Task[]
+  commissionsEarned  ReferralCommission[] @relation("CommissionsEarned")
+  commissionsGenerated ReferralCommission[] @relation("CommissionsGenerated")
+  
+  @@map("users")
+}
+
+model Transaction {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type       String   // "DEPOSIT", "WITHDRAWAL", "PROFIT", "REINVEST"
+  amountUSDT Float
+  amountBTC  Float?
+  btcPrice   Float?
+  
+  reference  String?  // TXID, wallet address, etc.
+  status     String   @default("COMPLETED")
+  
+  createdAt  DateTime @default(now())
+  
+  @@map("transactions")
+  @@index([userId])
+}
+
+model Task {
+  id                 String     @id @default(uuid())
+  userId             String
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type               TaskType
+  status             TaskStatus @default(PENDING)
+  
+  amountUSD          Float
+  reference          String?
+  proof              String?    // URL to proof image
+  
+  approvedByAdmin    String?    // Email of admin who approved
+  
+  // BTC Transaction Fields
+  btcAddress         String?    // Dirección BTC origen/destino
+  txid               String?    // Transaction ID de blockchain
+  collaboratorName   String?    // Nombre del colaborador (para DEPOSIT_MANUAL)
+  depositMethod      String?    // "AUTO" o "MANUAL"
+  
+  // Withdrawal Fields
+  destinationType    String?    // "PERSONAL", "COLLABORATOR"
+  destinationUserId  String?    // ID del colaborador (si aplica)
+  
+  liquidationDetails Json?      // For liquidation tasks
+  
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  
+  @@map("tasks")
+  @@index([status])
+}
+
+model InvestmentPlan {
+  id                     String   @id @default(uuid())
+  name                   String
+  minCapital             Float
+  minDailyReturn         Float    // Percentage
+  maxDailyReturn         Float    // Percentage
+  dailyAverage           Float    // Percentage
+  monthlyCommission      Float    // Percentage
+  referralCommissionRate Float    @default(0.10) // Percentage (0.05 = 5%, 0.10 = 10%)
+  doublingTime           String
+  
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("investment_plans")
+}
+
+model ReferralCommission {
+  id               String   @id @default(uuid())
+  
+  // Usuario que recibe la comisión (el referidor)
+  referrerId       String
+  referrer         User     @relation("CommissionsEarned", fields: [referrerId], references: [id], onDelete: Cascade)
+  
+  // Usuario que generó la comisión (el referido)
+  referredUserId   String
+  referredUser     User     @relation("CommissionsGenerated", fields: [referredUserId], references: [id], onDelete: Cascade)
+  
+  // Detalles de la comisión
+  depositAmount    Float    // Monto del depósito que generó la comisión
+  commissionRate   Float    // Tasa aplicada (ej: 0.10 para 10%)
+  commissionAmount Float    // Monto pagado
+  
+  // Trazabilidad
+  depositTaskId    String?  // Referencia al Task de depósito
+  transactionId    String?  // Referencia a la Transaction creada
+  
+  createdAt        DateTime @default(now())
+  
+  @@map("referral_commissions")
+  @@index([referrerId])
+  @@index([referredUserId])
+}
+
+model DailyProfitRate {
+  id              String          @id @default(uuid())
+  date            DateTime        // We will store midnight UTC used for the day
+  investmentClass InvestmentClass
+  rate            Float           // Percentage (e.g. 0.8 for 0.8%)
+  processed       Boolean         @default(false)
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([date, investmentClass])
+  @@map("daily_profit_rates")
+}

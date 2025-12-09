@@ -1,0 +1,4 @@
+PS C:\Users\Brandon\Documents\Code\En ejecución\Cloud Capital> node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+
+PS C:\Users\Brandon\Documents\Code\En ejecución\Cloud Capital> node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
